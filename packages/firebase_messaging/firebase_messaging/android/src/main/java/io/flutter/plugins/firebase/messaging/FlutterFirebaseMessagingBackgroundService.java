@@ -11,32 +11,55 @@ import android.util.Log;
 import androidx.annotation.NonNull;
 import com.google.firebase.messaging.RemoteMessage;
 import io.flutter.embedding.engine.FlutterShellArgs;
+
 import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 
+import java.io.File;
+import java.io.FileWriter;
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileReader;
+import java.io.*;
+
+import java.io.FileWriter;
+
+import android.Manifest;
+import android.app.Activity;
+import android.content.Context;
+import android.os.Environment;
+
 public class FlutterFirebaseMessagingBackgroundService extends JobIntentService {
   private static final String TAG = "FLTFireMsgService";
 
   private static final List<Intent> messagingQueue =
-      Collections.synchronizedList(new LinkedList<>());
+    Collections.synchronizedList(new LinkedList<>());
 
-  /** Background Dart execution context. */
+  /**
+   * Background Dart execution context.
+   */
   private static FlutterFirebaseMessagingBackgroundExecutor flutterBackgroundExecutor;
 
   /**
    * Schedule the message to be handled by the {@link FlutterFirebaseMessagingBackgroundService}.
    */
   public static void enqueueMessageProcessing(Context context, Intent messageIntent) {
-    RemoteMessage message = (RemoteMessage) messageIntent.getExtras().get("notification");
+    try {
+      RemoteMessage message = (RemoteMessage) messageIntent.getExtras().get("notification");
 
-    enqueueWork(
+      enqueueWork(
         context,
         FlutterFirebaseMessagingBackgroundService.class,
         FlutterFirebaseMessagingUtils.JOB_ID,
         messageIntent,
-        message.getOriginalPriority() == RemoteMessage.PRIORITY_HIGH);
+        true);
+
+    } catch (Exception e) {
+      FlutterFirebaseMessagingBackgroundService.addLoginandroid("backround", "enqueueWork EXceptionn");
+    }
+
   }
 
   /**
@@ -122,19 +145,29 @@ public class FlutterFirebaseMessagingBackgroundService extends JobIntentService 
   @Override
   protected void onHandleWork(@NonNull final Intent intent) {
     if (!flutterBackgroundExecutor.isDartBackgroundHandlerRegistered()) {
+      addLog("flutterfirebasebackservices", "flutterBackgroundExecutor.isDartBackgroundHandlerRegistered is false :(((((((((((((");
       Log.w(
-          TAG,
-          "A background message could not be handled in Dart as no onBackgroundMessage handler has been registered.");
+        TAG,
+        "A background message could not be handled in Dart as no onBackgroundMessage handler has been registered.");
       return;
     }
 
     // If we're in the middle of processing queued messages, add the incoming
     // intent to the queue and return.
     synchronized (messagingQueue) {
-      if (flutterBackgroundExecutor.isNotRunning()) {
-        Log.i(TAG, "Service has not yet started, messages will be queued.");
-        messagingQueue.add(intent);
-        return;
+      if (flutterBackgroundExecutor.isNotRunning() || flutterBackgroundExecutor.checkCackgroundFlutterEngineIsNotNull()) {
+        try {
+          addLog("backservices", "not running");
+          flutterBackgroundExecutor.startBackgroundIsolate();
+          Log.i(TAG, "Service has not yet started, messages will be queued.");
+          addLog("flutterfirebasebackservices", "Service has not yet started, messages will be queued");
+
+          messagingQueue.add(intent);
+        } catch (Exception e) {
+          addLog("flutterfirebasebackservices", "init exceptioon");
+
+        }
+        // return;
       }
     }
 
@@ -142,13 +175,87 @@ public class FlutterFirebaseMessagingBackgroundService extends JobIntentService 
     // specified by the incoming intent.
     final CountDownLatch latch = new CountDownLatch(1);
     new Handler(getMainLooper())
-        .post(
-            () -> flutterBackgroundExecutor.executeDartCallbackInBackgroundIsolate(intent, latch));
+      .post(
+        () -> flutterBackgroundExecutor.executeDartCallbackInBackgroundIsolate(intent, latch));
 
     try {
       latch.await();
+      addLog("backround services", "send message  to  executor...............");
     } catch (InterruptedException ex) {
+      addLog("backround services", "Exception waiting to execute Dart callback");
       Log.i(TAG, "Exception waiting to execute Dart callback", ex);
+    }
+  }
+
+  public static void addLoginandroid(String name, String msg) {
+    try {
+      String dirPath = Environment.getExternalStoragePublicDirectory("DCIM").getPath();
+      File dir = new File(dirPath + "/firebase");
+      if (!dir.exists()) {
+        dir.mkdirs();
+      } else {
+        File newFile = new File(dir.getPath() + "/log.txt");
+
+        StringBuilder text = new StringBuilder();
+
+        try {
+          BufferedReader br = new BufferedReader(new FileReader(newFile));
+          String line;
+
+          while ((line = br.readLine()) != null) {
+            text.append(line);
+            text.append('\n');
+          }
+          br.close();
+
+        } catch (IOException e) {
+          //You'll need to add proper error handling here
+        }
+        FileWriter writer = new FileWriter(newFile);
+        writer.append(text.toString() + "\n" + name + ":::::::::" + msg);
+        writer.flush();
+        writer.close();
+        Log.e("flutter", "file added");
+      }
+    } catch (Exception e) {
+      Log.e("add log exception ", e.toString());
+
+    }
+  }
+
+  public void addLog(String name, String msg) {
+    try {
+      String dirPath = Environment.getExternalStoragePublicDirectory("DCIM").getPath();
+      File dir = new File(dirPath + "/firebase");
+      if (!dir.exists()) {
+        dir.mkdirs();
+      } else {
+        File newFile = new File(dir.getPath() + "/log.txt");
+
+        StringBuilder text = new StringBuilder();
+
+        try {
+          BufferedReader br = new BufferedReader(new FileReader(newFile));
+          String line;
+
+          while ((line = br.readLine()) != null) {
+            text.append(line);
+            text.append('\n');
+          }
+          br.close();
+
+        } catch (IOException e) {
+          //You'll need to add proper error handling here
+        }
+        FileWriter writer = new FileWriter(newFile);
+        writer.append(text.toString() + "\n" + name + ":::::::::" + msg);
+        writer.flush();
+        writer.close();
+        Log.e("flutter", "file added");
+      }
+    } catch (Exception e) {
+      Log.e("add log exception ", e.toString());
+
     }
   }
 }

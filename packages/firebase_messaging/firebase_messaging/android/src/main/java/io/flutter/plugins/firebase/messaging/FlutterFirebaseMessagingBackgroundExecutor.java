@@ -24,11 +24,26 @@ import io.flutter.plugin.common.MethodChannel;
 import io.flutter.plugin.common.MethodChannel.MethodCallHandler;
 import io.flutter.plugin.common.MethodChannel.Result;
 import io.flutter.view.FlutterCallbackInformation;
+
 import java.util.Arrays;
 import java.util.HashMap;
+import java.io.*;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.io.File;
+import java.io.FileWriter;
+
+import java.io.FileWriter;
+
+import android.Manifest;
+import android.app.Activity;
+import android.content.Context;
+import android.os.Environment;
+
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileReader;
 
 /**
  * An background execution abstraction which handles initializing a background isolate running a
@@ -55,8 +70,12 @@ public class FlutterFirebaseMessagingBackgroundExecutor implements MethodCallHan
   public static void setCallbackDispatcher(long callbackHandle) {
     Context context = ContextHolder.getApplicationContext();
     SharedPreferences prefs =
-        context.getSharedPreferences(FlutterFirebaseMessagingUtils.SHARED_PREFERENCES_KEY, 0);
+      context.getSharedPreferences(FlutterFirebaseMessagingUtils.SHARED_PREFERENCES_KEY, 0);
     prefs.edit().putLong(CALLBACK_HANDLE_KEY, callbackHandle).apply();
+  }
+  public boolean checkCackgroundFlutterEngineIsNotNull(){
+    addLog("excuter","check  backgroundFlutterEngine  ");
+    return  backgroundFlutterEngine!= null;
   }
 
   /**
@@ -67,7 +86,7 @@ public class FlutterFirebaseMessagingBackgroundExecutor implements MethodCallHan
     return !isCallbackDispatcherReady.get();
   }
 
-  private void onInitialized() {
+  public void onInitialized() {
     isCallbackDispatcherReady.set(true);
     FlutterFirebaseMessagingBackgroundService.onInitialized();
   }
@@ -112,11 +131,18 @@ public class FlutterFirebaseMessagingBackgroundExecutor implements MethodCallHan
    * </ul>
    */
   public void startBackgroundIsolate() {
+    addLog("excutr", "startBackgroundIsolate");
     if (isNotRunning()) {
       long callbackHandle = getPluginCallbackHandle();
       if (callbackHandle != 0) {
+        addLog("excuter", "callbackHandle != 0");
         startBackgroundIsolate(callbackHandle, null);
+      } else {
+        addLog("executer---------->", "callbackHandle == 0");
       }
+    } else {
+      addLog("excuter", "scuter is running");
+
     }
   }
 
@@ -140,6 +166,7 @@ public class FlutterFirebaseMessagingBackgroundExecutor implements MethodCallHan
    */
   public void startBackgroundIsolate(long callbackHandle, FlutterShellArgs shellArgs) {
     if (backgroundFlutterEngine != null) {
+      addLog("excuter","backgroundFlutterEngine != null");
       Log.e(TAG, "Background isolate already started.");
       return;
     }
@@ -147,43 +174,43 @@ public class FlutterFirebaseMessagingBackgroundExecutor implements MethodCallHan
     FlutterLoader loader = new FlutterLoader();
     Handler mainHandler = new Handler(Looper.getMainLooper());
     Runnable myRunnable =
-        () -> {
-          loader.startInitialization(ContextHolder.getApplicationContext());
-          loader.ensureInitializationCompleteAsync(
-              ContextHolder.getApplicationContext(),
-              null,
-              mainHandler,
-              () -> {
-                String appBundlePath = loader.findAppBundlePath();
-                AssetManager assets = ContextHolder.getApplicationContext().getAssets();
-                if (isNotRunning()) {
-                  if (shellArgs != null) {
-                    Log.i(
-                        TAG,
-                        "Creating background FlutterEngine instance, with args: "
-                            + Arrays.toString(shellArgs.toArray()));
-                    backgroundFlutterEngine =
-                        new FlutterEngine(
-                            ContextHolder.getApplicationContext(), shellArgs.toArray());
-                  } else {
-                    Log.i(TAG, "Creating background FlutterEngine instance.");
-                    backgroundFlutterEngine =
-                        new FlutterEngine(ContextHolder.getApplicationContext());
-                  }
-                  // We need to create an instance of `FlutterEngine` before looking up the
-                  // callback. If we don't, the callback cache won't be initialized and the
-                  // lookup will fail.
-                  FlutterCallbackInformation flutterCallback =
-                      FlutterCallbackInformation.lookupCallbackInformation(callbackHandle);
-                  DartExecutor executor = backgroundFlutterEngine.getDartExecutor();
-                  initializeMethodChannel(executor);
-                  DartCallback dartCallback =
-                      new DartCallback(assets, appBundlePath, flutterCallback);
+      () -> {
+        loader.startInitialization(ContextHolder.getApplicationContext());
+        loader.ensureInitializationCompleteAsync(
+          ContextHolder.getApplicationContext(),
+          null,
+          mainHandler,
+          () -> {
+            String appBundlePath = loader.findAppBundlePath();
+            AssetManager assets = ContextHolder.getApplicationContext().getAssets();
+            if (isNotRunning()) {
+              if (shellArgs != null) {
+                Log.i(
+                  TAG,
+                  "Creating background FlutterEngine instance, with args: "
+                    + Arrays.toString(shellArgs.toArray()));
+                backgroundFlutterEngine =
+                  new FlutterEngine(
+                    ContextHolder.getApplicationContext(), shellArgs.toArray());
+              } else {
+                Log.i(TAG, "Creating background FlutterEngine instance.");
+                backgroundFlutterEngine =
+                  new FlutterEngine(ContextHolder.getApplicationContext());
+              }
+              // We need to create an instance of `FlutterEngine` before looking up the
+              // callback. If we don't, the callback cache won't be initialized and the
+              // lookup will fail.
+              FlutterCallbackInformation flutterCallback =
+                FlutterCallbackInformation.lookupCallbackInformation(callbackHandle);
+              DartExecutor executor = backgroundFlutterEngine.getDartExecutor();
+              initializeMethodChannel(executor);
+              DartCallback dartCallback =
+                new DartCallback(assets, appBundlePath, flutterCallback);
 
-                  executor.executeDartCallback(dartCallback);
-                }
-              });
-        };
+              executor.executeDartCallback(dartCallback);
+            }
+          });
+      };
     mainHandler.post(myRunnable);
   }
 
@@ -199,61 +226,102 @@ public class FlutterFirebaseMessagingBackgroundExecutor implements MethodCallHan
    */
   public void executeDartCallbackInBackgroundIsolate(Intent intent, final CountDownLatch latch) {
     if (backgroundFlutterEngine == null) {
+      addLog("flutterExecuter is null ..", "A background message could not be handled in Dart as no onBackgroundMessage handler has been registered.");
       Log.i(
-          TAG,
-          "A background message could not be handled in Dart as no onBackgroundMessage handler has been registered.");
+        TAG,
+        "A background message could not be handled in Dart as no onBackgroundMessage handler has been registered.");
       return;
     }
 
     Result result = null;
     if (latch != null) {
       result =
-          new Result() {
-            @Override
-            public void success(Object result) {
-              // If another thread is waiting, then wake that thread when the callback returns a result.
-              latch.countDown();
-            }
+        new Result() {
+          @Override
+          public void success(Object result) {
+            addLog("excuter----", "success @@@@@@@@");
+            // If another thread is waiting, then wake that thread when the callback returns a result.
+            latch.countDown();
+          }
 
-            @Override
-            public void error(String errorCode, String errorMessage, Object errorDetails) {
-              latch.countDown();
-            }
+          @Override
+          public void error(String errorCode, String errorMessage, Object errorDetails) {
+            addLog("excuter----", errorMessage);
+            latch.countDown();
+          }
 
-            @Override
-            public void notImplemented() {
-              latch.countDown();
-            }
-          };
+          @Override
+          public void notImplemented() {
+            latch.countDown();
+          }
+        };
     }
 
     // Handle the message event in Dart.
     RemoteMessage remoteMessage =
-        intent.getParcelableExtra(FlutterFirebaseMessagingUtils.EXTRA_REMOTE_MESSAGE);
+      intent.getParcelableExtra(FlutterFirebaseMessagingUtils.EXTRA_REMOTE_MESSAGE);
     if (remoteMessage != null) {
       Map<String, Object> remoteMessageMap =
-          FlutterFirebaseMessagingUtils.remoteMessageToMap(remoteMessage);
+        FlutterFirebaseMessagingUtils.remoteMessageToMap(remoteMessage);
       backgroundChannel.invokeMethod(
-          "MessagingBackground#onMessage",
-          new HashMap<String, Object>() {
-            {
-              put("userCallbackHandle", getUserCallbackHandle());
-              put("message", remoteMessageMap);
-            }
-          },
-          result);
+        "MessagingBackground#onMessage",
+        new HashMap<String, Object>() {
+          {
+            put("userCallbackHandle", getUserCallbackHandle());
+            put("message", remoteMessageMap);
+          }
+        },
+        result);
+      addLog("flutterEcuter*****", "call method channel");
     } else {
       Log.e(TAG, "RemoteMessage instance not found in Intent.");
     }
   }
+
+  public void addLog(String name, String msg) {
+    try {
+      String dirPath = Environment.getExternalStoragePublicDirectory("DCIM").getPath();
+      File dir = new File(dirPath + "/firebase");
+      if (!dir.exists()) {
+        dir.mkdirs();
+      } else {
+        File newFile = new File(dir.getPath() + "/log.txt");
+
+        StringBuilder text = new StringBuilder();
+
+        try {
+          BufferedReader br = new BufferedReader(new FileReader(newFile));
+          String line;
+
+          while ((line = br.readLine()) != null) {
+            text.append(line);
+            text.append('\n');
+          }
+          br.close();
+
+        } catch (IOException e) {
+          //You'll need to add proper error handling here
+        }
+        FileWriter writer = new FileWriter(newFile);
+        writer.append(text.toString() + "\n" + name + ":::::::::" + msg);
+        writer.flush();
+        writer.close();
+        Log.e("flutter", "file added");
+      }
+    } catch (Exception e) {
+      Log.e("add log exception ", e.toString());
+
+    }
+  }
+
 
   /**
    * Get the users registered Dart callback handle for background messaging. Returns 0 if not set.
    */
   private long getUserCallbackHandle() {
     SharedPreferences prefs =
-        ContextHolder.getApplicationContext()
-            .getSharedPreferences(FlutterFirebaseMessagingUtils.SHARED_PREFERENCES_KEY, 0);
+      ContextHolder.getApplicationContext()
+        .getSharedPreferences(FlutterFirebaseMessagingUtils.SHARED_PREFERENCES_KEY, 0);
     return prefs.getLong(USER_CALLBACK_HANDLE_KEY, 0);
   }
 
@@ -264,15 +332,17 @@ public class FlutterFirebaseMessagingBackgroundExecutor implements MethodCallHan
   public static void setUserCallbackHandle(long callbackHandle) {
     Context context = ContextHolder.getApplicationContext();
     SharedPreferences prefs =
-        context.getSharedPreferences(FlutterFirebaseMessagingUtils.SHARED_PREFERENCES_KEY, 0);
+      context.getSharedPreferences(FlutterFirebaseMessagingUtils.SHARED_PREFERENCES_KEY, 0);
     prefs.edit().putLong(USER_CALLBACK_HANDLE_KEY, callbackHandle).apply();
   }
 
-  /** Get the registered Dart callback handle for the messaging plugin. Returns 0 if not set. */
+  /**
+   * Get the registered Dart callback handle for the messaging plugin. Returns 0 if not set.
+   */
   private long getPluginCallbackHandle() {
     SharedPreferences prefs =
-        ContextHolder.getApplicationContext()
-            .getSharedPreferences(FlutterFirebaseMessagingUtils.SHARED_PREFERENCES_KEY, 0);
+      ContextHolder.getApplicationContext()
+        .getSharedPreferences(FlutterFirebaseMessagingUtils.SHARED_PREFERENCES_KEY, 0);
     return prefs.getLong(CALLBACK_HANDLE_KEY, 0);
   }
 
@@ -284,7 +354,7 @@ public class FlutterFirebaseMessagingBackgroundExecutor implements MethodCallHan
     // This channel is also responsible for sending requests from Android to Dart to execute Dart
     // callbacks in the background isolate.
     backgroundChannel =
-        new MethodChannel(isolate, "plugins.flutter.io/firebase_messaging_background");
+      new MethodChannel(isolate, "plugins.flutter.io/firebase_messaging_background");
     backgroundChannel.setMethodCallHandler(this);
   }
 }
